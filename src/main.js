@@ -8,7 +8,8 @@ const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const title = document.querySelector('#title');
 const letters = 'HARUKA';
 const glyphs = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-if (!reduced) {
+function revealTitle() {
+  if(reduced)return;
   const start = performance.now();
   let last = 0;
   function reveal(now) {
@@ -42,19 +43,20 @@ async function setup() {
     return response.json();
   }
   const [names,animations]=await Promise.all([manifest('vrms'),manifest('vrmas')]);
-  if(!names.length){renderer.dispose();mount.replaceChildren();return;}
+  if(!names.length)throw Error('No VRM models available.');
   if(!animations.length)throw Error('Add a .vrma file to public/vrmas and rebuild.');
   const animationName=animations[Math.floor(Math.random()*animations.length)];
-  const animationAsset=await animationLoader.loadAsync(`${import.meta.env.BASE_URL}vrmas/${encodeURIComponent(animationName)}`);
+  let previous;
+  try {previous=sessionStorage.getItem('haruka-model');}catch { /* Storage may be disabled. */ }
+  const candidates=names.length>1?names.filter(name=>name!==previous):names;
+  const modelName=candidates[Math.floor(Math.random()*candidates.length)];
+  const [animationAsset,vrm]=await Promise.all([
+    animationLoader.loadAsync(`${import.meta.env.BASE_URL}vrmas/${encodeURIComponent(animationName)}`),
+    prepare(modelName)
+  ]);
   const animation=animationAsset.userData.vrmAnimations?.[0];
   if(!animation)throw Error(`No VRM animation in ${animationName}`);
-  const order=[...names];
-  for(let i=order.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[order[i],order[j]]=[order[j],order[i]];}
-  const bocchi=names.find(name=>/^bocchi\.vrm$/i.test(name));
-  if(bocchi && order.at(-1)!==bocchi)order.push(bocchi);
-  if(reduced && bocchi)order.splice(0,order.length,bocchi);
-  let vrm,framing,mixer,clip,index=0,elapsed=0,lastSwitch=0,finishAt=Infinity;
-  let prepared=null,preparing=false;
+  let framing;
   mount.dataset.animation=animationName;
   function resize(){
     const {width,height}=mount.getBoundingClientRect();renderer.setSize(width,height);camera.aspect=width/Math.max(height,1);
@@ -67,49 +69,37 @@ async function setup() {
     const next=gltf.userData.vrm;if(!next)throw Error(`Unsupported VRM: ${name}`);
     VRMUtils.rotateVRM0(next);return next;
   }
-  function prefetch(){
-    if(index+1>=order.length || reduced)return;
-    preparing=true;
-    prepare(order[index+1]).then(model=>{prepared={model};},error=>{prepared={error};}).finally(()=>{preparing=false;});
-  }
-  function activate(next){
-    if(vrm){mixer.stopAllAction();mixer.uncacheRoot(vrm.scene);pivot.remove(vrm.scene);VRMUtils.deepDispose(vrm.scene);}
-    vrm=next;pivot.add(vrm.scene);vrm.humanoid.resetNormalizedPose();vrm.scene.updateMatrixWorld(true);
-    if(vrm.lookAt){const proxy=new VRMLookAtQuaternionProxy(vrm.lookAt);proxy.name='VRMLookAtQuaternionProxy';vrm.scene.add(proxy);}
-    const bone=name=>vrm.humanoid.getNormalizedBoneNode(name);
-    const head=bone('head').getWorldPosition(new THREE.Vector3());const hips=bone('hips').getWorldPosition(new THREE.Vector3());
-    framing={headY:head.y,scale:Math.max(.2,head.y-hips.y)};resize();
-    clip=createVRMAnimationClip(animation,vrm);
-    mixer=new THREE.AnimationMixer(vrm.scene);
-    const action=mixer.clipAction(clip);action.setLoop(THREE.LoopOnce,1);action.clampWhenFinished=true;action.play();
-    // Sample every avatar at the same global timestamp; switching never restarts a spin.
-    mixer.setTime(reduced?Math.max(0,clip.duration-.001):elapsed%clip.duration);
-    if(index===order.length-1)finishAt=(Math.floor(elapsed/clip.duration)+1)*clip.duration;
-    lastSwitch=elapsed;
-    mount.dataset.model=order[index];mount.dataset.state='ready';mount.dataset.final=String(index===order.length-1);
-    prefetch();
-  }
-  activate(await prepare(order[0]));
-  const clock=new THREE.Clock();
+  pivot.add(vrm.scene);vrm.humanoid.resetNormalizedPose();vrm.scene.updateMatrixWorld(true);
+  if(vrm.lookAt){const proxy=new VRMLookAtQuaternionProxy(vrm.lookAt);proxy.name='VRMLookAtQuaternionProxy';vrm.scene.add(proxy);}
+  const bone=name=>vrm.humanoid.getNormalizedBoneNode(name);
+  const head=bone('head').getWorldPosition(new THREE.Vector3());const hips=bone('hips').getWorldPosition(new THREE.Vector3());
+  framing={headY:head.y,scale:Math.max(.2,head.y-hips.y)};resize();
+  const clip=createVRMAnimationClip(animation,vrm);
+  const mixer=new THREE.AnimationMixer(vrm.scene);
+  const action=mixer.clipAction(clip);action.setLoop(THREE.LoopOnce,1);action.clampWhenFinished=true;action.play();
+  mixer.setTime(reduced?Math.max(0,clip.duration-.001):0);
+  vrm.update(0);
+  // Compile shaders and upload textures while the page is still invisibly loading.
+  await Promise.all([renderer.compileAsync(scene,camera),document.fonts.ready]);
+  renderer.render(scene,camera);
+  await new Promise(requestAnimationFrame);
+  mount.dataset.model=modelName;mount.dataset.state='ready';
+  try {sessionStorage.setItem('haruka-model',modelName);}catch { /* Optional refresh history. */ }
+  document.documentElement.classList.remove('loading');
+  revealTitle();
+  const clock=new THREE.Clock();let elapsed=0;
   function frame(){
-    requestAnimationFrame(frame);const delta=clock.getDelta();if(document.hidden||!vrm)return;
-    elapsed+=delta;
-    // Fetch one avatar ahead instead of decoding every large VRM on a phone at once.
-    // If the network is slow, the current avatar keeps dancing until the next is ready.
-    if(!reduced && elapsed-lastSwitch>=.8 && prepared && !preparing){
-      const result=prepared;prepared=null;index++;
-      if(result.model)activate(result.model);
-      else {console.error('Could not load VRM:',order[index],result.error);prefetch();if(index===order.length-1)finishAt=(Math.floor(elapsed/clip.duration)+1)*clip.duration;}
-    }
-    const finished=reduced||elapsed>=finishAt;
-    const time=finished?Math.max(0,clip.duration-.001):elapsed%clip.duration;
-    // A clamped action must be unpaused when seeking back to the next loop.
-    mixer.clipAction(clip).paused=false;
-    mixer.setTime(time);
-    mount.dataset.motion=finished?'finished':'playing';
-    mount.dataset.animationTime=time.toFixed(3);
+    requestAnimationFrame(frame);const delta=clock.getDelta();if(document.hidden)return;
+    if(!reduced){elapsed+=delta;mixer.update(delta);}
+    mount.dataset.motion=reduced||elapsed>=clip.duration?'finished':'playing';
+    mount.dataset.animationTime=action.time.toFixed(3);
     vrm.update(Math.min(delta,.05));renderer.render(scene,camera);
   }
   frame();
 }
-setup().catch(error=>{mount.dataset.state='error';console.error('Character rendering unavailable:',error);});
+setup().catch(error=>{
+  mount.dataset.state='error';mount.replaceChildren();
+  document.documentElement.classList.remove('loading');
+  revealTitle();
+  console.error('Character rendering unavailable:',error);
+});

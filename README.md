@@ -17,9 +17,9 @@ The development server listens on port 4173. Cloud tasks are isolated; use this 
 
 Put `.vrm` files in `public/vrms/`, then restart the development server or rebuild. Startup/build scans every VRM in this folder. The generated `models.json` is not committed.
 
-Every refresh shuffles the avatars. During the selected animation, the next avatar appears roughly every 0.8 seconds when downloaded and decoded. All avatars use the same playback timestamp, so a change during a spin continues the same motion. The sequence visits every model, ends on `bocchi.vrm`, finishes the current animation loop, and holds its final pose. If Bocchi was already last, it stays. Without Bocchi, the last shuffled avatar stays.
+Each refresh chooses one random avatar and downloads only that VRM. Where browser session storage is available, the next refresh avoids the previous model. There is no avatar switching, prefetching, or forced Bocchi ending. One random VRMA plays once on that avatar, then holds its last pose. Reduced-motion preferences show the last pose immediately.
 
-Only the current and next avatars are decoded at once to limit memory usage on phones. Files are about 20–26 MB each, so slow connections may delay avatar changes; the current avatar keeps animating until the next is ready. Reduced-motion preferences select Bocchi immediately (when present), hold the final pose, and skip cycling and title scrambling.
+The page stays blank with its normal background until the chosen model and animation have loaded, shaders have compiled, textures have uploaded, and the first 3D frame has rendered. The title reveal begins afterward. If loading fails, the text-only landing page is revealed instead of leaving a permanent blank screen. These VRMs are about 20–26 MB each, so the blank loading period can be longer on slow connections.
 
 Included uploaded models: Bocchi, Akane, Gothmaid, Miku, and Soldier Catgirl. The AKAI attachment exceeded the environment's 32 MiB inbound transfer limit and is not included. Add a smaller export to `public/vrms/` when available. Embedded attribution/usage metadata is preserved in the models and recorded in `public/licenses/uploaded-models.json`. Only publish models you have permission to distribute.
 
@@ -27,7 +27,7 @@ Included uploaded models: Bocchi, Akane, Gothmaid, Miku, and Soldier Catgirl. Th
 
 Upload `.vrma` files to **`public/vrmas/`** and push to `main`. GitHub Pages rebuilds automatically. Locally, restart `npm run dev` after adding files. All `.vrma` files in that folder are registered automatically, and **one is chosen at random each refresh**. Currently only the supplied `VRMA_02.vrma` is included.
 
-The animation's actual VRMA bone, expression, and gaze tracks are retargeted with `@pixiv/three-vrm-animation`. The previous adapted robot motion and procedural greeting have been removed. Models change during playback without restarting the animation. Use a clip with a comfortable final pose: Bocchi holds the last frame after the full model sequence. At least one VRMA is required.
+The animation's actual VRMA bone, expression, and gaze tracks are retargeted with `@pixiv/three-vrm-animation`. Use a clip with a comfortable final pose. At least one VRMA is required.
 
 ## Self host
 
