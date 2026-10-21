@@ -1,6 +1,6 @@
 # Haruka
 
-A minimal, self-hostable coming-soon page with a character-decoding title and VRM avatars. Each refresh shuffles the models, shows every avatar, then settles on Bocchi. Authored walking, wave, and idle clips replace the original procedural greeting; motion transitions blend into one another. Reduced-motion preferences show a static idle pose without cycling or text scrambling.
+A minimal, self-hostable coming-soon page with a character-decoding title and VRM avatars animated directly from VRMA files.
 
 ## Develop
 
@@ -11,17 +11,23 @@ npm ci --cache /workspace/.npm-cache
 npm run dev
 ```
 
-The development server listens on port 4173. The cloud environment is already isolated; use this checkout directly, without creating a worktree.
+The development server listens on port 4173. Cloud tasks are isolated; use this checkout directly without creating a worktree.
 
 ## Add characters
 
-Put `.vrm` files in `public/vrms/`, then restart the development server or rebuild. The generated `models.json` includes every VRM file in that folder, sorted by name. Remove `sample.vrm` when replacing it with your own avatars. Ensure you have permission to use and distribute each model. Models are scanned at startup/build time; an already exported static site does not scan its server filesystem.
+Put `.vrm` files in `public/vrms/`, then restart the development server or rebuild. Startup/build scans every VRM in this folder. The generated `models.json` is not committed.
 
-Each avatar walks in, waves once, then idles. After about eight seconds, the next avatar appears and greets the visitor. Once all models have appeared, `bocchi.vrm` is selected for the final idle (if Bocchi was already last, it simply stays). Without a Bocchi model, the last model in the shuffled list stays. The original sample avatar has been replaced by the supplied characters.
+Every refresh shuffles the avatars. During the selected animation, the next avatar appears roughly every 0.8 seconds when downloaded and decoded. All avatars use the same playback timestamp, so a change during a spin continues the same motion. The sequence visits every model, ends on `bocchi.vrm`, finishes the current animation loop, and holds its final pose. If Bocchi was already last, it stays. Without Bocchi, the last shuffled avatar stays.
 
-Models are fetched one ahead, keeping at most two decoded avatars in memory. The first model still needs to download before appearing. These files are about 20–26 MB each, so slow mobile connections may take time. Reduced motion loads only one random model and skips automatic rotation.
+Only the current and next avatars are decoded at once to limit memory usage on phones. Files are about 20–26 MB each, so slow connections may delay avatar changes; the current avatar keeps animating until the next is ready. Reduced-motion preferences select Bocchi immediately (when present), hold the final pose, and skip cycling and title scrambling.
 
-Five uploaded models are included: Bocchi, Akane, Gothmaid, Miku, and Soldier Catgirl. The supplied AKAI attachment exceeded the environment's 32 MiB inbound transfer limit and is not included. Add a smaller export to `public/vrms/` when available. Embedded model attribution/usage metadata is preserved in each VRM and recorded in `public/licenses/uploaded-models.json`.
+Included uploaded models: Bocchi, Akane, Gothmaid, Miku, and Soldier Catgirl. The AKAI attachment exceeded the environment's 32 MiB inbound transfer limit and is not included. Add a smaller export to `public/vrms/` when available. Embedded attribution/usage metadata is preserved in the models and recorded in `public/licenses/uploaded-models.json`. Only publish models you have permission to distribute.
+
+## Add animations
+
+Upload `.vrma` files to **`public/vrmas/`** and push to `main`. GitHub Pages rebuilds automatically. Locally, restart `npm run dev` after adding files. All `.vrma` files in that folder are registered automatically, and **one is chosen at random each refresh**. Currently only the supplied `VRMA_02.vrma` is included.
+
+The animation's actual VRMA bone, expression, and gaze tracks are retargeted with `@pixiv/three-vrm-animation`. The previous adapted robot motion and procedural greeting have been removed. Models change during playback without restarting the animation. Use a clip with a comfortable final pose: Bocchi holds the last frame after the full model sequence. At least one VRMA is required.
 
 ## Self host
 
@@ -29,18 +35,16 @@ Five uploaded models are included: Bocchi, Akane, Gothmaid, Miku, and Soldier Ca
 npm run build
 ```
 
-Upload the contents of `dist/` to any static HTTP(S) server. All runtime libraries and models are bundled locally; no backend, API key, PHP, or runtime CDN is required. Serve over HTTP(S), rather than opening `index.html` as a file. If deploying below a subdirectory, build with `npm run build -- --base=/your-path/`.
+Upload the contents of `dist/` to any static HTTP(S) server. Runtime libraries, avatars, and animations are included locally. No API key, backend, PHP, or CDN is required. Serve over HTTP(S), rather than opening `index.html` as a file. If deploying below a subdirectory, build with `npm run build -- --base=/your-path/`.
 
-Use `npm run preview` to serve the production build on port 4173 (stop the dev server first). Adding models requires another build and upload. The landing page intentionally has no navigation, signup form, or extra sections.
+Use `npm run preview` for the production build (stop the dev server first). For a subdirectory build, also pass that same base to preview, e.g. `npm run preview -- --base=/HarukaSite/`. Adding models or animations to an exported site requires another build and upload.
 
 ## Credits
 
-Rendering: Three.js (MIT) and @pixiv/three-vrm (MIT). Their license texts are in `public/licenses/` and copied into the production export.
-
-Walk, wave, and idle motions are adapted from Tomás Laulhé's (Quaternius) CC0 RobotExpressive animation clips in the official Three.js examples. `public/animations/motions.json` contains 30 fps samples of the authored bone directions, retargeted at runtime to each VRM humanoid. See `public/licenses/animations.txt` for attribution and source. This direction-based adaptation preserves the authored limb motion; it does not reproduce the source rig's finger or twist animation.
+Three.js, @pixiv/three-vrm, and @pixiv/three-vrm-animation are MIT licensed. Library licenses are copied into `public/licenses/` for the static export. VRMA_02 and the character files were supplied by the site owner; their respective licenses still apply.
 
 ## GitHub Pages
 
-The included `.github/workflows/pages.yml` builds and deploys on every push to `main`, or when run manually from the Actions tab. In the repository's **Settings → Pages → Build and deployment**, set **Source** to **GitHub Actions**. After enabling it, run **Deploy Haruka to GitHub Pages** from **Actions → Run workflow** if the initial run already failed before Pages was enabled.
+`.github/workflows/pages.yml` builds and deploys on every push to `main`, or manually from the Actions tab. In **Settings → Pages → Build and deployment**, set **Source** to **GitHub Actions**.
 
-The workflow builds with `--base=/HarukaSite/` (derived from the repository name), so assets and VRM models work at https://nonsensitydev.github.io/HarukaSite/. You do not need to commit `dist/` or upload the ZIP. For updates, commit source edits or add `.vrm` files to `public/vrms/` and push to `main`.
+The workflow builds with `--base=/HarukaSite/` (derived from the repository name), so assets work at https://nonsensitydev.github.io/HarukaSite/. Do not commit `dist/` or upload the ZIP for this workflow. Commit source edits, VRMs in `public/vrms/`, or VRMAs in `public/vrmas/` and push to `main`.

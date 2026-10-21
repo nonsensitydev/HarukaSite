@@ -2,6 +2,7 @@ import './style.css';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { VRMLoaderPlugin, VRMUtils } from '@pixiv/three-vrm';
+import { VRMAnimationLoaderPlugin, createVRMAnimationClip, VRMLookAtQuaternionProxy } from '@pixiv/three-vrm-animation';
 
 const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const title = document.querySelector('#title');
@@ -33,20 +34,28 @@ async function setup() {
   const camera=new THREE.PerspectiveCamera(27,1,.01,50);
   const pivot=new THREE.Group();scene.add(pivot);
   const loader=new GLTFLoader();loader.register(parser=>new VRMLoaderPlugin(parser));
-  const [names,motions]=await Promise.all([
-    fetch(`${import.meta.env.BASE_URL}vrms/models.json`).then(r=>{if(!r.ok)throw Error('Model manifest unavailable');return r.json();}),
-    fetch(`${import.meta.env.BASE_URL}animations/motions.json`).then(r=>{if(!r.ok)throw Error('Motion clips unavailable');return r.json();})
-  ]);
+  const animationLoader=new GLTFLoader();
+  animationLoader.register(parser=>new VRMAnimationLoaderPlugin(parser));
+  async function manifest(folder){
+    const response=await fetch(`${import.meta.env.BASE_URL}${folder}/models.json`);
+    if(!response.ok)throw Error(`${folder} manifest unavailable`);
+    return response.json();
+  }
+  const [names,animations]=await Promise.all([manifest('vrms'),manifest('vrmas')]);
   if(!names.length){renderer.dispose();mount.replaceChildren();return;}
-  // Fisher-Yates gives every model a chance to be first on a fresh page load.
+  if(!animations.length)throw Error('Add a .vrma file to public/vrmas and rebuild.');
+  const animationName=animations[Math.floor(Math.random()*animations.length)];
+  const animationAsset=await animationLoader.loadAsync(`${import.meta.env.BASE_URL}vrmas/${encodeURIComponent(animationName)}`);
+  const animation=animationAsset.userData.vrmAnimations?.[0];
+  if(!animation)throw Error(`No VRM animation in ${animationName}`);
   const order=[...names];
   for(let i=order.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[order[i],order[j]]=[order[j],order[i]];}
   const bocchi=names.find(name=>/^bocchi\.vrm$/i.test(name));
   if(bocchi && order.at(-1)!==bocchi)order.push(bocchi);
-  let vrm,framing,index=0,elapsed=0,loading=false,nextBlink=3;
-  let bones={},pending=null,rigSign=1;
-  const parents={hips:null,spine:'hips',chest:'spine',neck:'chest',head:'neck',leftUpperArm:'chest',leftLowerArm:'leftUpperArm',leftHand:'leftLowerArm',rightUpperArm:'chest',rightLowerArm:'rightUpperArm',rightHand:'rightLowerArm',leftUpperLeg:'hips',leftLowerLeg:'leftUpperLeg',rightUpperLeg:'hips',rightLowerLeg:'rightUpperLeg'};
-  const up=new THREE.Vector3(0,1,0), direction=new THREE.Vector3();
+  if(reduced && bocchi)order.splice(0,order.length,bocchi);
+  let vrm,framing,mixer,clip,index=0,elapsed=0,lastSwitch=0,finishAt=Infinity;
+  let prepared=null,preparing=false;
+  mount.dataset.animation=animationName;
   function resize(){
     const {width,height}=mount.getBoundingClientRect();renderer.setSize(width,height);camera.aspect=width/Math.max(height,1);
     if(framing){const {headY,scale}=framing;camera.position.set(0,headY-scale*.16,scale*Math.max(4.3,2.9/camera.aspect));camera.lookAt(0,headY-scale*.19,0);}
@@ -60,61 +69,46 @@ async function setup() {
   }
   function prefetch(){
     if(index+1>=order.length || reduced)return;
-    // Keep at most the current and next model in memory. Failures advance the queue.
-    pending=prepare(order[index+1]).then(model=>({model}),error=>({error}));
+    preparing=true;
+    prepare(order[index+1]).then(model=>{prepared={model};},error=>{prepared={error};}).finally(()=>{preparing=false;});
   }
   function activate(next){
-    if(vrm){pivot.remove(vrm.scene);VRMUtils.deepDispose(vrm.scene);}
-    vrm=next;pivot.position.set(0,0,0);pivot.rotation.set(0,0,0);pivot.add(vrm.scene);
-    vrm.humanoid.resetNormalizedPose();vrm.scene.updateMatrixWorld(true);
+    if(vrm){mixer.stopAllAction();mixer.uncacheRoot(vrm.scene);pivot.remove(vrm.scene);VRMUtils.deepDispose(vrm.scene);}
+    vrm=next;pivot.add(vrm.scene);vrm.humanoid.resetNormalizedPose();vrm.scene.updateMatrixWorld(true);
+    if(vrm.lookAt){const proxy=new VRMLookAtQuaternionProxy(vrm.lookAt);proxy.name='VRMLookAtQuaternionProxy';vrm.scene.add(proxy);}
     const bone=name=>vrm.humanoid.getNormalizedBoneNode(name);
     const head=bone('head').getWorldPosition(new THREE.Vector3());const hips=bone('hips').getWorldPosition(new THREE.Vector3());
     framing={headY:head.y,scale:Math.max(.2,head.y-hips.y)};resize();
-    rigSign=Math.sign(bone('leftLowerArm').position.x)||1;
-    bones={};for(const name of Object.keys(parents)){const node=bone(name);if(node)bones[name]=node;}
-    elapsed=0;nextBlink=2.7;
+    clip=createVRMAnimationClip(animation,vrm);
+    mixer=new THREE.AnimationMixer(vrm.scene);
+    const action=mixer.clipAction(clip);action.setLoop(THREE.LoopOnce,1);action.clampWhenFinished=true;action.play();
+    // Sample every avatar at the same global timestamp; switching never restarts a spin.
+    mixer.setTime(reduced?Math.max(0,clip.duration-.001):elapsed%clip.duration);
+    if(index===order.length-1)finishAt=(Math.floor(elapsed/clip.duration)+1)*clip.duration;
+    lastSwitch=elapsed;
     mount.dataset.model=order[index];mount.dataset.state='ready';mount.dataset.final=String(index===order.length-1);
     prefetch();
   }
   activate(await prepare(order[0]));
-  function sample(clip,time,name){
-    const motion=motions[clip],position=(time%motion.duration)*motion.fps;
-    const i=Math.floor(position),a=motion.frames[i][name],b=motion.frames[Math.min(i+1,motion.frames.length-1)][name];
-    return direction.fromArray(a).lerp(new THREE.Vector3().fromArray(b),position-i).multiply(new THREE.Vector3(rigSign,1,rigSign)).normalize();
-  }
-  const clock=new THREE.Clock();const smooth=x=>{x=THREE.MathUtils.clamp(x,0,1);return x*x*(3-2*x);};
-  async function advance(){
-    loading=true;const result=await pending;index++;
-    if(result?.model)activate(result.model);
-    else {console.error('Could not load VRM:',order[index],result?.error);prefetch();elapsed=8;}
-    loading=false;
-  }
+  const clock=new THREE.Clock();
   function frame(){
     requestAnimationFrame(frame);const delta=clock.getDelta();if(document.hidden||!vrm)return;
-    const dt=Math.min(delta,.05);elapsed+=delta;
-    const t=reduced?8:elapsed,walkEnd=2.2,waveEnd=walkEnd+motions.Wave.duration;
-    const clip=t<walkEnd?'Walking':t<waveEnd?'Wave':'Idle';
-    const clipTime=t<walkEnd?t:t<waveEnd?t-walkEnd:t-waveEnd;
-    mount.dataset.motion=clip;
-    const previous=t<walkEnd+.3?'Walking':'Wave';
-    const blend=t<walkEnd?1:t<walkEnd+.3?smooth((t-walkEnd)/.3):t<waveEnd?1:smooth((t-waveEnd)/.35);
-    const world={};
-    for(const [name,node]of Object.entries(bones)){
-      const axis=name.startsWith('left')&&/Arm|Hand/.test(name)?new THREE.Vector3(rigSign,0,0):name.startsWith('right')&&/Arm|Hand/.test(name)?new THREE.Vector3(-rigSign,0,0):/Leg/.test(name)?new THREE.Vector3(0,-1,0):up;
-      const desired=sample(clip,clipTime,name).clone();
-      if(blend<1)desired.copy(sample(previous,t<walkEnd+.3?t:motions.Wave.duration-.001,name)).lerp(sample(clip,clipTime,name).clone(),blend).normalize();
-      const rotation=new THREE.Quaternion().setFromUnitVectors(axis,desired);world[name]=rotation;
-      const parent=world[parents[name]];
-      node.quaternion.copy(parent?parent.clone().invert().multiply(rotation):rotation);
+    elapsed+=delta;
+    // Fetch one avatar ahead instead of decoding every large VRM on a phone at once.
+    // If the network is slow, the current avatar keeps dancing until the next is ready.
+    if(!reduced && elapsed-lastSwitch>=.8 && prepared && !preparing){
+      const result=prepared;prepared=null;index++;
+      if(result.model)activate(result.model);
+      else {console.error('Could not load VRM:',order[index],result.error);prefetch();if(index===order.length-1)finishAt=(Math.floor(elapsed/clip.duration)+1)*clip.duration;}
     }
-    // Authored walk motion plus a short translation into the frame; no leaning/swaying overlay.
-    pivot.position.x=reduced?0:-framing.scale*1.8*(1-smooth(t/walkEnd));
-    pivot.rotation.y=t<walkEnd?-.25*(1-smooth((t-1.5)/.7)):0;
-    const blink=reduced?0:Math.max(0,1-Math.abs(t-nextBlink)/.09);
-    vrm.expressionManager?.setValue('blink',blink);vrm.expressionManager?.setValue('happy',.12);
-    if(t>nextBlink+.1)nextBlink=t+3+Math.random()*3;
-    if(!reduced && t>8 && index<order.length-1 && !loading)advance();
-    vrm.update(dt);renderer.render(scene,camera);
+    const finished=reduced||elapsed>=finishAt;
+    const time=finished?Math.max(0,clip.duration-.001):elapsed%clip.duration;
+    // A clamped action must be unpaused when seeking back to the next loop.
+    mixer.clipAction(clip).paused=false;
+    mixer.setTime(time);
+    mount.dataset.motion=finished?'finished':'playing';
+    mount.dataset.animationTime=time.toFixed(3);
+    vrm.update(Math.min(delta,.05));renderer.render(scene,camera);
   }
   frame();
 }
