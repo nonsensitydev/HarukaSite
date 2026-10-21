@@ -34,6 +34,7 @@ async function setup() {
   const pivot = new THREE.Group(); scene.add(pivot);
   const loader = new GLTFLoader(); loader.register(parser => new VRMLoaderPlugin(parser));
   let vrm, base = {}, elapsed = 0, nextBlink = 3, loading = false;
+  let framing;
   let names = await fetch(`${import.meta.env.BASE_URL}vrms/models.json`).then(r => {if(!r.ok)throw Error('Model manifest unavailable');return r.json();});
   if (!names.length) { renderer.dispose(); mount.replaceChildren(); return; }
   let index = 0;
@@ -58,8 +59,8 @@ async function setup() {
       const head = bone('head').getWorldPosition(new THREE.Vector3());
       const hips = bone('hips').getWorldPosition(new THREE.Vector3());
       const scale = Math.max(.2,head.y-hips.y);
-      camera.position.set(0,head.y-scale*.16,scale*4.3);
-      camera.lookAt(0,head.y-scale*.19,0);
+      framing = {headY:head.y, scale};
+      resize();
       pivot.position.set(0,0,0);
       elapsed=0;nextBlink=2.7;
       mount.dataset.model = names[index];
@@ -67,7 +68,19 @@ async function setup() {
     } catch(error) { console.error('Could not load VRM:',names[index],error);mount.dataset.state='error'; }
     finally {loading=false;}
   }
-  function resize(){const {width,height}=mount.getBoundingClientRect();renderer.setSize(width,height);camera.aspect=width/height;camera.updateProjectionMatrix();}
+  function resize(){
+    const {width,height}=mount.getBoundingClientRect();
+    renderer.setSize(width,height);
+    camera.aspect=width/Math.max(height,1);
+    if(framing){
+      const {headY,scale}=framing;
+      // Fit both axes: a tall/narrow viewport must not crop the avatar's face.
+      const distance=scale*Math.max(4.3,2.9/camera.aspect);
+      camera.position.set(0,headY-scale*.16,distance);
+      camera.lookAt(0,headY-scale*.19,0);
+    }
+    camera.updateProjectionMatrix();
+  }
   new ResizeObserver(resize).observe(mount);resize();await load();
   const clock = new THREE.Clock();
   const smooth = x => {x=THREE.MathUtils.clamp(x,0,1);return x*x*(3-2*x);};
