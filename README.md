@@ -1,6 +1,6 @@
 # Haruka
 
-A minimal, self-hostable coming-soon page: a character-decoding title, a smiling VRM avatar peeking in from the left, one greeting wave, and breathing/blinking idle motion. Multiple models take turns, retreating before the next greeting. Reduced-motion preferences disable the animated greeting, rotation, and text scramble.
+A minimal, self-hostable coming-soon page with a character-decoding title and VRM avatars. Each refresh shuffles the models, shows every avatar, then settles on Bocchi. Authored walking, wave, and idle clips replace the original procedural greeting; motion transitions blend into one another. Reduced-motion preferences show a static idle pose without cycling or text scrambling.
 
 ## Develop
 
@@ -17,7 +17,11 @@ The development server listens on port 4173. The cloud environment is already is
 
 Put `.vrm` files in `public/vrms/`, then restart the development server or rebuild. The generated `models.json` includes every VRM file in that folder, sorted by name. Remove `sample.vrm` when replacing it with your own avatars. Ensure you have permission to use and distribute each model. Models are scanned at startup/build time; an already exported static site does not scan its server filesystem.
 
-Each model enters, waves once, idles, then exits after about 18 seconds when multiple models are available. With one model, it stays and idles. VRM 0.x and 1.0 models are supported through three-vrm; unusual custom rigs or expression mappings may need model-specific tuning.
+Each avatar walks in, waves once, then idles. After about eight seconds, the next avatar appears and greets the visitor. Once all models have appeared, `bocchi.vrm` is selected for the final idle (if Bocchi was already last, it simply stays). Without a Bocchi model, the last model in the shuffled list stays. The original sample avatar has been replaced by the supplied characters.
+
+Models are fetched one ahead, keeping at most two decoded avatars in memory. The first model still needs to download before appearing. These files are about 20–26 MB each, so slow mobile connections may take time. Reduced motion loads only one random model and skips automatic rotation.
+
+Five uploaded models are included: Bocchi, Akane, Gothmaid, Miku, and Soldier Catgirl. The supplied AKAI attachment exceeded the environment's 32 MiB inbound transfer limit and is not included. Add a smaller export to `public/vrms/` when available. Embedded model attribution/usage metadata is preserved in each VRM and recorded in `public/licenses/uploaded-models.json`.
 
 ## Self host
 
@@ -33,7 +37,7 @@ Use `npm run preview` to serve the production build on port 4173 (stop the dev s
 
 Rendering: Three.js (MIT) and @pixiv/three-vrm (MIT). Their license texts are in `public/licenses/` and copied into the production export.
 
-The included demonstration avatar is `VRM1_Constraint_Twist_Sample` v1.0.1, © 2022 pixiv Inc., from the official pixiv/three-vrm examples. It is not a custom Haruka character. See `public/licenses/sample-model.json` for the embedded license and usage metadata, including the VRM Public License 1.0 URL. Credit is not required by the model; its metadata permits redistribution. The metadata's usage restrictions still apply.
+Walk, wave, and idle motions are adapted from Tomás Laulhé's (Quaternius) CC0 RobotExpressive animation clips in the official Three.js examples. `public/animations/motions.json` contains 30 fps samples of the authored bone directions, retargeted at runtime to each VRM humanoid. See `public/licenses/animations.txt` for attribution and source. This direction-based adaptation preserves the authored limb motion; it does not reproduce the source rig's finger or twist animation.
 
 ## GitHub Pages
 

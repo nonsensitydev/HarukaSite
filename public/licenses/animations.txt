@@ -1,0 +1,9 @@
+Walk, wave, and idle animation data adapted from RobotExpressive.
+Author: Tomás Laulhé (Quaternius), https://quaternius.com/
+License: CC0 1.0 Universal, https://creativecommons.org/publicdomain/zero/1.0/
+Source: https://github.com/mrdoob/three.js/tree/dev/examples/models/gltf/RobotExpressive
+Source asset: RobotExpressive.glb (Three.js official examples).
+Three.js credits conversion/modifications to Don McCurdy.
+
+motions.json samples the authored bone directions at 30 fps for retargeting onto
+VRM normalized humanoid bones. No robot mesh or textures are included.

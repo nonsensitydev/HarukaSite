@@ -23,95 +23,99 @@ if (!reduced) {
 
 const mount = document.querySelector('#character');
 async function setup() {
-  const renderer = new THREE.WebGLRenderer({alpha:true, antialias:true});
-  renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+  const renderer = new THREE.WebGLRenderer({alpha:true,antialias:true});
+  renderer.setPixelRatio(Math.min(devicePixelRatio,1.5));
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   mount.append(renderer.domElement);
   const scene = new THREE.Scene();
   scene.add(new THREE.HemisphereLight(0xffffff,0xb7b3c3,1.5));
-  const light = new THREE.DirectionalLight(0xfff9f0,1.6); light.position.set(-1,2,3); scene.add(light);
-  const camera = new THREE.PerspectiveCamera(27,1,.01,50);
-  const pivot = new THREE.Group(); scene.add(pivot);
-  const loader = new GLTFLoader(); loader.register(parser => new VRMLoaderPlugin(parser));
-  let vrm, base = {}, elapsed = 0, nextBlink = 3, loading = false;
-  let framing;
-  let names = await fetch(`${import.meta.env.BASE_URL}vrms/models.json`).then(r => {if(!r.ok)throw Error('Model manifest unavailable');return r.json();});
-  if (!names.length) { renderer.dispose(); mount.replaceChildren(); return; }
-  let index = 0;
-  async function load() {
-    loading = true;
-    try {
-      const gltf = await loader.loadAsync(`${import.meta.env.BASE_URL}vrms/${encodeURIComponent(names[index])}`);
-      const next = gltf.userData.vrm;
-      if (!next) throw Error('Not a supported VRM model');
-      VRMUtils.rotateVRM0(next);
-      if(vrm) {pivot.remove(vrm.scene);VRMUtils.deepDispose(vrm.scene);}
-      vrm = next; pivot.add(vrm.scene);
-      vrm.humanoid.resetNormalizedPose();
-      // VRM normalized bones allow the same gesture across differently rigged avatars.
-      const bone = name => vrm.humanoid.getNormalizedBoneNode(name);
-      bone('leftUpperArm')?.rotation.set(0,0,-1.25);
-      bone('rightUpperArm')?.rotation.set(0,0,1.25);
-      base = {};
-      for(const name of ['hips','spine','chest','neck','head','leftUpperArm','leftLowerArm','leftHand','rightUpperArm','rightLowerArm','rightHand']) {
-        const node=bone(name);if(node)base[name]={node,rotation:node.rotation.clone(),position:node.position.clone()};
-      }
-      const head = bone('head').getWorldPosition(new THREE.Vector3());
-      const hips = bone('hips').getWorldPosition(new THREE.Vector3());
-      const scale = Math.max(.2,head.y-hips.y);
-      framing = {headY:head.y, scale};
-      resize();
-      pivot.position.set(0,0,0);
-      elapsed=0;nextBlink=2.7;
-      mount.dataset.model = names[index];
-      mount.dataset.state = 'ready';
-    } catch(error) { console.error('Could not load VRM:',names[index],error);mount.dataset.state='error'; }
-    finally {loading=false;}
-  }
+  const light=new THREE.DirectionalLight(0xfff9f0,1.6);light.position.set(-1,2,3);scene.add(light);
+  const camera=new THREE.PerspectiveCamera(27,1,.01,50);
+  const pivot=new THREE.Group();scene.add(pivot);
+  const loader=new GLTFLoader();loader.register(parser=>new VRMLoaderPlugin(parser));
+  const [names,motions]=await Promise.all([
+    fetch(`${import.meta.env.BASE_URL}vrms/models.json`).then(r=>{if(!r.ok)throw Error('Model manifest unavailable');return r.json();}),
+    fetch(`${import.meta.env.BASE_URL}animations/motions.json`).then(r=>{if(!r.ok)throw Error('Motion clips unavailable');return r.json();})
+  ]);
+  if(!names.length){renderer.dispose();mount.replaceChildren();return;}
+  // Fisher-Yates gives every model a chance to be first on a fresh page load.
+  const order=[...names];
+  for(let i=order.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[order[i],order[j]]=[order[j],order[i]];}
+  const bocchi=names.find(name=>/^bocchi\.vrm$/i.test(name));
+  if(bocchi && order.at(-1)!==bocchi)order.push(bocchi);
+  let vrm,framing,index=0,elapsed=0,loading=false,nextBlink=3;
+  let bones={},pending=null,rigSign=1;
+  const parents={hips:null,spine:'hips',chest:'spine',neck:'chest',head:'neck',leftUpperArm:'chest',leftLowerArm:'leftUpperArm',leftHand:'leftLowerArm',rightUpperArm:'chest',rightLowerArm:'rightUpperArm',rightHand:'rightLowerArm',leftUpperLeg:'hips',leftLowerLeg:'leftUpperLeg',rightUpperLeg:'hips',rightLowerLeg:'rightUpperLeg'};
+  const up=new THREE.Vector3(0,1,0), direction=new THREE.Vector3();
   function resize(){
-    const {width,height}=mount.getBoundingClientRect();
-    renderer.setSize(width,height);
-    camera.aspect=width/Math.max(height,1);
-    if(framing){
-      const {headY,scale}=framing;
-      // Fit both axes: a tall/narrow viewport must not crop the avatar's face.
-      const distance=scale*Math.max(4.3,2.9/camera.aspect);
-      camera.position.set(0,headY-scale*.16,distance);
-      camera.lookAt(0,headY-scale*.19,0);
-    }
+    const {width,height}=mount.getBoundingClientRect();renderer.setSize(width,height);camera.aspect=width/Math.max(height,1);
+    if(framing){const {headY,scale}=framing;camera.position.set(0,headY-scale*.16,scale*Math.max(4.3,2.9/camera.aspect));camera.lookAt(0,headY-scale*.19,0);}
     camera.updateProjectionMatrix();
   }
-  new ResizeObserver(resize).observe(mount);resize();await load();
-  const clock = new THREE.Clock();
-  const smooth = x => {x=THREE.MathUtils.clamp(x,0,1);return x*x*(3-2*x);};
+  new ResizeObserver(resize).observe(mount);resize();
+  async function prepare(name){
+    const gltf=await loader.loadAsync(`${import.meta.env.BASE_URL}vrms/${encodeURIComponent(name)}`);
+    const next=gltf.userData.vrm;if(!next)throw Error(`Unsupported VRM: ${name}`);
+    VRMUtils.rotateVRM0(next);return next;
+  }
+  function prefetch(){
+    if(index+1>=order.length || reduced)return;
+    // Keep at most the current and next model in memory. Failures advance the queue.
+    pending=prepare(order[index+1]).then(model=>({model}),error=>({error}));
+  }
+  function activate(next){
+    if(vrm){pivot.remove(vrm.scene);VRMUtils.deepDispose(vrm.scene);}
+    vrm=next;pivot.position.set(0,0,0);pivot.rotation.set(0,0,0);pivot.add(vrm.scene);
+    vrm.humanoid.resetNormalizedPose();vrm.scene.updateMatrixWorld(true);
+    const bone=name=>vrm.humanoid.getNormalizedBoneNode(name);
+    const head=bone('head').getWorldPosition(new THREE.Vector3());const hips=bone('hips').getWorldPosition(new THREE.Vector3());
+    framing={headY:head.y,scale:Math.max(.2,head.y-hips.y)};resize();
+    rigSign=Math.sign(bone('leftLowerArm').position.x)||1;
+    bones={};for(const name of Object.keys(parents)){const node=bone(name);if(node)bones[name]=node;}
+    elapsed=0;nextBlink=2.7;
+    mount.dataset.model=order[index];mount.dataset.state='ready';mount.dataset.final=String(index===order.length-1);
+    prefetch();
+  }
+  activate(await prepare(order[0]));
+  function sample(clip,time,name){
+    const motion=motions[clip],position=(time%motion.duration)*motion.fps;
+    const i=Math.floor(position),a=motion.frames[i][name],b=motion.frames[Math.min(i+1,motion.frames.length-1)][name];
+    return direction.fromArray(a).lerp(new THREE.Vector3().fromArray(b),position-i).multiply(new THREE.Vector3(rigSign,1,rigSign)).normalize();
+  }
+  const clock=new THREE.Clock();const smooth=x=>{x=THREE.MathUtils.clamp(x,0,1);return x*x*(3-2*x);};
+  async function advance(){
+    loading=true;const result=await pending;index++;
+    if(result?.model)activate(result.model);
+    else {console.error('Could not load VRM:',order[index],result?.error);prefetch();elapsed=8;}
+    loading=false;
+  }
   function frame(){
-    requestAnimationFrame(frame);
-    const delta=clock.getDelta();
-    const dt=Math.min(delta,.05);
-    if(document.hidden || !vrm)return;
-    elapsed+=delta;
-    const t=elapsed;
-    if(!reduced){
-      const enter=smooth(t/1.7), leave=names.length>1?smooth((t-17)/1.5):0;
-      pivot.position.x= -1.1*(1-enter+leave)-.13;
-      pivot.rotation.z= -.12*enter*(1-leave);
-      for(const {node,rotation,position} of Object.values(base)){node.rotation.copy(rotation);node.position.copy(position);}
-      if(base.spine)base.spine.node.rotation.z=.025*Math.sin(t*.9);
-      if(base.chest)base.chest.node.rotation.x=.018*Math.sin(t*1.8);
-      if(base.head){base.head.node.rotation.z=.045*Math.sin(t*.65);base.head.node.rotation.y=.05*Math.sin(t*.47);}
-      // One greeting: raise, wave gently from the wrist, then lower to rest.
-      const greeting=smooth((t-1.1)/.8)*(1-smooth((t-4.8)/1));
-      if(base.rightUpperArm){base.rightUpperArm.node.rotation.z=1.25-1.5*greeting;base.rightUpperArm.node.rotation.x=-.25*greeting;}
-      if(base.rightLowerArm){base.rightLowerArm.node.rotation.y=-.3*greeting;base.rightLowerArm.node.rotation.z=-1.7*greeting;}
-      if(base.rightHand)base.rightHand.node.rotation.x=greeting*(.22+Math.sin((t-1.9)*8)*.3);
-      const blink=Math.max(0,1-Math.abs(t-nextBlink)/.085);
-      vrm.expressionManager?.setValue('blink',blink);
-      if(t>nextBlink+.1)nextBlink=t+2.8+Math.random()*3;
-      vrm.expressionManager?.setValue('happy',.3+.08*Math.sin(t*.8));
-      if(t>18.6 && names.length>1 && !loading){index=(index+1)%names.length;load();}
-    }else {pivot.position.x=-.13;vrm.expressionManager?.setValue('happy',.3);}
+    requestAnimationFrame(frame);const delta=clock.getDelta();if(document.hidden||!vrm)return;
+    const dt=Math.min(delta,.05);elapsed+=delta;
+    const t=reduced?8:elapsed,walkEnd=2.2,waveEnd=walkEnd+motions.Wave.duration;
+    const clip=t<walkEnd?'Walking':t<waveEnd?'Wave':'Idle';
+    const clipTime=t<walkEnd?t:t<waveEnd?t-walkEnd:t-waveEnd;
+    mount.dataset.motion=clip;
+    const previous=t<walkEnd+.3?'Walking':'Wave';
+    const blend=t<walkEnd?1:t<walkEnd+.3?smooth((t-walkEnd)/.3):t<waveEnd?1:smooth((t-waveEnd)/.35);
+    const world={};
+    for(const [name,node]of Object.entries(bones)){
+      const axis=name.startsWith('left')&&/Arm|Hand/.test(name)?new THREE.Vector3(rigSign,0,0):name.startsWith('right')&&/Arm|Hand/.test(name)?new THREE.Vector3(-rigSign,0,0):/Leg/.test(name)?new THREE.Vector3(0,-1,0):up;
+      const desired=sample(clip,clipTime,name).clone();
+      if(blend<1)desired.copy(sample(previous,t<walkEnd+.3?t:motions.Wave.duration-.001,name)).lerp(sample(clip,clipTime,name).clone(),blend).normalize();
+      const rotation=new THREE.Quaternion().setFromUnitVectors(axis,desired);world[name]=rotation;
+      const parent=world[parents[name]];
+      node.quaternion.copy(parent?parent.clone().invert().multiply(rotation):rotation);
+    }
+    // Authored walk motion plus a short translation into the frame; no leaning/swaying overlay.
+    pivot.position.x=reduced?0:-framing.scale*1.8*(1-smooth(t/walkEnd));
+    pivot.rotation.y=t<walkEnd?-.25*(1-smooth((t-1.5)/.7)):0;
+    const blink=reduced?0:Math.max(0,1-Math.abs(t-nextBlink)/.09);
+    vrm.expressionManager?.setValue('blink',blink);vrm.expressionManager?.setValue('happy',.12);
+    if(t>nextBlink+.1)nextBlink=t+3+Math.random()*3;
+    if(!reduced && t>8 && index<order.length-1 && !loading)advance();
     vrm.update(dt);renderer.render(scene,camera);
   }
   frame();
 }
-setup().catch(error => {mount.dataset.state='error';console.error('Character rendering unavailable:',error);});
+setup().catch(error=>{mount.dataset.state='error';console.error('Character rendering unavailable:',error);});

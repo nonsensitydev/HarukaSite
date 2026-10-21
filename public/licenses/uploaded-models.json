@@ -1,0 +1,68 @@
+{
+  "soldiercatgirl.vrm": {
+    "allowedUserName": "Everyone",
+    "author": "6",
+    "commercialUssageName": "Allow",
+    "licenseName": "Other",
+    "sexualUssageName": "Allow",
+    "texture": 32,
+    "title": "combat uniform",
+    "version": "1",
+    "violentUssageName": "Allow",
+    "otherPermissionUrl": "https://hub.vroid.com/license?allowed_to_use_user=everyone&characterization_allowed_user=everyone&corporate_commercial_use=allow&credit=unnecessary&modification=allow&personal_commercial_use=profit&redistribution=allow&sexual_expression=allow&version=1&violent_expression=allow",
+    "otherLicenseUrl": "https://hub.vroid.com/license?allowed_to_use_user=everyone&characterization_allowed_user=everyone&corporate_commercial_use=allow&credit=unnecessary&modification=allow&personal_commercial_use=profit&redistribution=allow&sexual_expression=allow&version=1&violent_expression=allow"
+  },
+  "bocchi.vrm": {
+    "allowedUserName": "Everyone",
+    "author": "@wawari_w",
+    "commercialUssageName": "Disallow",
+    "contactInformation": "wawari.carrd.co",
+    "licenseName": "Other",
+    "sexualUssageName": "Allow",
+    "texture": 25,
+    "title": "Hitori 'Bocchi' Gotoh",
+    "version": "1",
+    "violentUssageName": "Allow",
+    "otherPermissionUrl": "https://hub.vroid.com/license?allowed_to_use_user=everyone&characterization_allowed_user=everyone&corporate_commercial_use=disallow&credit=unnecessary&modification=allow&personal_commercial_use=profit&redistribution=disallow&sexual_expression=allow&version=1&violent_expression=allow",
+    "otherLicenseUrl": "https://hub.vroid.com/license?allowed_to_use_user=everyone&characterization_allowed_user=everyone&corporate_commercial_use=disallow&credit=unnecessary&modification=allow&personal_commercial_use=profit&redistribution=disallow&sexual_expression=allow&version=1&violent_expression=allow"
+  },
+  "miku.vrm": {
+    "allowedUserName": "Everyone",
+    "author": "止丸",
+    "commercialUssageName": "Disallow",
+    "contactInformation": "twitter:@tomaru_o",
+    "licenseName": "Other",
+    "otherPermissionUrl": "https://hub.vroid.com/license?allowed_to_use_user=everyone&characterization_allowed_user=everyone&corporate_commercial_use=disallow&credit=necessary&modification=disallow&personal_commercial_use=disallow&redistribution=disallow&sexual_expression=disallow&version=1&violent_expression=allow",
+    "sexualUssageName": "Disallow",
+    "texture": 4,
+    "title": "止丸式初音ミクNT",
+    "version": "1.0",
+    "violentUssageName": "Allow",
+    "otherLicenseUrl": "https://hub.vroid.com/license?allowed_to_use_user=everyone&characterization_allowed_user=everyone&corporate_commercial_use=disallow&credit=necessary&modification=disallow&personal_commercial_use=disallow&redistribution=disallow&sexual_expression=disallow&version=1&violent_expression=allow"
+  },
+  "gothmaid.vrm": {
+    "allowedUserName": "Everyone",
+    "author": "SiDiami",
+    "commercialUssageName": "Disallow",
+    "contactInformation": "@Diami_Furawazu in Twitter ",
+    "licenseName": "Other",
+    "sexualUssageName": "Allow",
+    "texture": 50,
+    "title": "Goth Maid",
+    "version": "1.5",
+    "violentUssageName": "Allow",
+    "otherPermissionUrl": "https://hub.vroid.com/license?allowed_to_use_user=everyone&characterization_allowed_user=everyone&corporate_commercial_use=disallow&credit=necessary&modification=allow&personal_commercial_use=disallow&redistribution=disallow&sexual_expression=allow&version=1&violent_expression=allow",
+    "otherLicenseUrl": "https://hub.vroid.com/license?allowed_to_use_user=everyone&characterization_allowed_user=everyone&corporate_commercial_use=disallow&credit=necessary&modification=allow&personal_commercial_use=disallow&redistribution=disallow&sexual_expression=allow&version=1&violent_expression=allow"
+  },
+  "VRM_akane.vrm": {
+    "allowedUserName": "Everyone",
+    "author": "minto_akayama",
+    "commercialUssageName": "Allow",
+    "licenseName": "CC0",
+    "sexualUssageName": "Allow",
+    "texture": 5,
+    "title": "Akane",
+    "version": "1.0",
+    "violentUssageName": "Allow"
+  }
+}
