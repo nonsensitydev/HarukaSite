@@ -17,7 +17,7 @@ The development server listens on port 4173. Cloud tasks are isolated; use this 
 
 Put `.vrm` files in `public/vrms/`, then restart the development server or rebuild. Startup/build scans every VRM in this folder. The generated `models.json` is not committed.
 
-Each refresh chooses one random avatar and downloads only that VRM. Where browser session storage is available, the next refresh avoids the previous model. There is no avatar switching, prefetching, or forced Bocchi ending. One random VRMA plays once on that avatar, then holds its last pose. Reduced-motion preferences show the last pose immediately.
+Each refresh chooses one random avatar and downloads only that VRM. Where browser session storage is available, the next refresh avoids the previous model. There is no avatar switching, prefetching, or forced Bocchi ending. One random VRMA plays once on that avatar, then blends into a relaxed standing idle with subtle breathing. Reduced-motion preferences show the standing pose immediately.
 
 The page stays blank with its normal background until the chosen model and animation have loaded, shaders have compiled, textures have uploaded, and the first 3D frame has rendered. The title reveal begins afterward. If loading fails, the text-only landing page is revealed instead of leaving a permanent blank screen. These VRMs are about 20–26 MB each, so the blank loading period can be longer on slow connections.
 
@@ -27,7 +27,7 @@ Included uploaded models: Bocchi, Akane, Gothmaid, Miku, and Soldier Catgirl. Th
 
 Upload `.vrma` files to **`public/vrmas/`** and push to `main`. GitHub Pages rebuilds automatically. Locally, restart `npm run dev` after adding files. All `.vrma` files in that folder are registered automatically, and **one is chosen at random each refresh**. Currently only the supplied `VRMA_02.vrma` is included.
 
-The animation's actual VRMA bone, expression, and gaze tracks are retargeted with `@pixiv/three-vrm-animation`. Use a clip with a comfortable final pose. At least one VRMA is required.
+The animation's actual VRMA bone, expression, and gaze tracks are retargeted with `@pixiv/three-vrm-animation`. The avatar blends from the final animation pose into standing idle over 0.9 seconds. At least one VRMA is required.
 
 ## Self host
 

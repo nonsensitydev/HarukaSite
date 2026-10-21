@@ -67,7 +67,11 @@ async function setup() {
   async function prepare(name){
     const gltf=await loader.loadAsync(`${import.meta.env.BASE_URL}vrms/${encodeURIComponent(name)}`);
     const next=gltf.userData.vrm;if(!next)throw Error(`Unsupported VRM: ${name}`);
-    VRMUtils.rotateVRM0(next);return next;
+    VRMUtils.rotateVRM0(next);
+    // Skinned face parts move beyond their original bounds during a VRMA.
+    // Only one avatar is drawn, so keep its meshes visible instead of using stale bounds.
+    next.scene.traverse(node=>{if(node.isMesh)node.frustumCulled=false;});
+    return next;
   }
   pivot.add(vrm.scene);vrm.humanoid.resetNormalizedPose();vrm.scene.updateMatrixWorld(true);
   if(vrm.lookAt){const proxy=new VRMLookAtQuaternionProxy(vrm.lookAt);proxy.name='VRMLookAtQuaternionProxy';vrm.scene.add(proxy);}
@@ -75,9 +79,25 @@ async function setup() {
   const head=bone('head').getWorldPosition(new THREE.Vector3());const hips=bone('hips').getWorldPosition(new THREE.Vector3());
   framing={headY:head.y,scale:Math.max(.2,head.y-hips.y)};resize();
   const clip=createVRMAnimationClip(animation,vrm);
+  // Capture the avatar's normalized rest rig before the VRMA changes any bones.
+  // Animate a relaxed standing pose on every bone so hips/fingers also leave the final gesture.
+  const idleTracks=[];
+  const leftAxis=Math.sign(bone('leftLowerArm').position.x)||1;
+  for(const [name,{node}]of Object.entries(vrm.humanoid.normalizedHumanBones)){
+    const rotation=node.quaternion.clone();
+    if(name==='leftUpperArm')rotation.setFromAxisAngle(new THREE.Vector3(0,0,1),-leftAxis*1.35);
+    if(name==='rightUpperArm')rotation.setFromAxisAngle(new THREE.Vector3(0,0,1),leftAxis*1.35);
+    const middle=rotation.clone();
+    if(name==='chest')middle.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1,0,0),.009));
+    idleTracks.push(new THREE.QuaternionKeyframeTrack(`${node.name}.quaternion`,[0,2.4,4.8],[...rotation.toArray(),...middle.toArray(),...rotation.toArray()]));
+    idleTracks.push(new THREE.VectorKeyframeTrack(`${node.name}.position`,[0,4.8],[...node.position.toArray(),...node.position.toArray()]));
+  }
+  const idleClip=new THREE.AnimationClip('Standing idle',4.8,idleTracks);
   const mixer=new THREE.AnimationMixer(vrm.scene);
-  const action=mixer.clipAction(clip);action.setLoop(THREE.LoopOnce,1);action.clampWhenFinished=true;action.play();
-  mixer.setTime(reduced?Math.max(0,clip.duration-.001):0);
+  const action=mixer.clipAction(clip);action.setLoop(THREE.LoopOnce,1);action.clampWhenFinished=true;
+  const idleAction=mixer.clipAction(idleClip);
+  let settling=reduced;
+  if(reduced){idleAction.play();mixer.update(0);}else action.play();
   vrm.update(0);
   // Compile shaders and upload textures while the page is still invisibly loading.
   await Promise.all([renderer.compileAsync(scene,camera),document.fonts.ready]);
@@ -90,8 +110,17 @@ async function setup() {
   const clock=new THREE.Clock();let elapsed=0;
   function frame(){
     requestAnimationFrame(frame);const delta=clock.getDelta();if(document.hidden)return;
-    if(!reduced){elapsed+=delta;mixer.update(delta);}
-    mount.dataset.motion=reduced||elapsed>=clip.duration?'finished':'playing';
+    if(!reduced){
+      elapsed+=delta;
+      if(!settling && elapsed>=clip.duration){
+        settling=true;
+        idleAction.reset().play().fadeIn(.9);
+        action.fadeOut(.9);
+      }
+      mixer.update(delta);
+      if(settling && elapsed>=clip.duration+.9)action.stop();
+    }
+    mount.dataset.motion=reduced||elapsed>=clip.duration+.9?'idle':settling?'settling':'playing';
     mount.dataset.animationTime=action.time.toFixed(3);
     vrm.update(Math.min(delta,.05));renderer.render(scene,camera);
   }
